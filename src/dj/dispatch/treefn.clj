@@ -29,7 +29,7 @@
                        (let [the-fn (temp-key fn-map)
                              dependents (-> the-fn
                                             meta
-                                            :v.1.dispatch.treefn/dependencies
+                                            :dj.dispatch.treefn/dependencies
                                             set)]
                          (if (empty? dependents)
                            (conj all-dependents
@@ -47,7 +47,7 @@
         shaken-dag-with-inputs (reduce-kv (fn [ret k the-fn]
                                             (let [dependents (-> the-fn
                                                                  meta
-                                                                 :v.1.dispatch.treefn/dependencies)]
+                                                                 :dj.dispatch.treefn/dependencies)]
                                               (assoc ret
                                                 k
                                                 (set dependents))))
