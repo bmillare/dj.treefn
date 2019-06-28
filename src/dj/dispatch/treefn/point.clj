@@ -1,4 +1,4 @@
-(ns v.1.dispatch.treefn.point
+(ns dj.dispatch.treefn.point
   "
 * Motivation
 - treefn's are flexible, easy to manipulate, composable, and

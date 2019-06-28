@@ -1,4 +1,4 @@
-(ns v.1.dispatch.treefn
+(ns dj.dispatch.treefn
 "
 (let [args {:x 1, :y 2}
       fms {:add (fm [:x :y]
