@@ -103,6 +103,92 @@
        ::input-key-set input-key-set
        ::fn-map fn-map})))
 
+(defn treefm-print-debug
+  "shakes fm-map with root-key and produces a treefn but with fm instead of fn, which uses map destructuring
+
+  Internally, maps are being passed around to the functions"
+  [fn-map root-key]
+  (let [available-keys (set (keys fn-map))
+        ;; set of keys
+        shaken-keys ((fn collect [all-dependents temp-key]
+                       (let [the-fn (temp-key fn-map)
+                             dependents (-> the-fn
+                                            meta
+                                            ::dependencies
+                                            set)]
+                         (if (empty? dependents)
+                           (conj all-dependents
+                                 temp-key)
+                           (reduce collect
+                                   (clojure.set/union dependents all-dependents)
+                                   dependents))))
+                     #{root-key}
+                     root-key)
+        ;; set of keys
+        input-key-set (clojure.set/difference shaken-keys available-keys)
+        ;; map of keys->fms that will be called
+        shaken-map (select-keys fn-map shaken-keys) ; select-keys automatically disregards keys 
+        ;; map of keys->keys (also for analysis, contains topological information)
+        shaken-dag-with-inputs (reduce-kv (fn [ret k the-fn]
+                                            (let [dependents (-> the-fn
+                                                                 meta
+                                                                 ::dependencies)]
+                                              (assoc ret
+                                                     k
+                                                     (set dependents))))
+                                          {}
+                                          shaken-map)
+        ;; map of keys->keys (remove input-keys so we call only functions)
+        shaken-dag (reduce-kv (fn [ret k dependents]
+                                (assoc ret
+                                       k
+                                       (clojure.set/difference dependents
+                                                               input-key-set)))
+                              {}
+                              shaken-dag-with-inputs)
+        ;; vector of keys of fms we will call
+        sorted-keys (dj.algorithms.dag/topological-sort shaken-dag)]
+    (with-meta (fn [partial-val-map]
+                 (let [provided-input-key-set (set (keys partial-val-map))]
+                   (when-not (empty? (clojure.set/difference input-key-set provided-input-key-set))
+                     (throw (ex-info "provided input keys does not cover required inputs"
+                                     {:required-input-key-set input-key-set
+                                      :provided-input-key-set provided-input-key-set
+                                      :missing-input-key-set (clojure.set/difference input-key-set provided-input-key-set)}))))
+                 ;; would like to use transients but 'contains?' bug CLJ-700
+                 (let [timings (atom {})]
+                   (with-meta
+                     (reduce (fn [val-map the-fn-key]
+                               (let [start (System/nanoTime)]
+                                 (println (java.util.Date.) "in" the-fn-key)
+                                 ;; we can reuse previously computed values
+                                 (if (contains? val-map the-fn-key)
+                                   val-map
+                                   (let [the-fn (shaken-map the-fn-key)
+                                         ret (assoc val-map
+                                                    the-fn-key
+                                                    (try
+                                                      (the-fn val-map)
+                                                      (catch Exception e
+                                                        (throw (ex-info "treefn node error"
+                                                                        {:val-map val-map
+                                                                         :the-fn the-fn
+                                                                         :shaken-map shaken-map
+                                                                         :the-fn-key the-fn-key}
+                                                                        e)))))]
+                                     (swap! timings assoc the-fn-key
+                                            (/ (double (- (System/nanoTime)
+                                                          start))
+                                               1000000.0))
+                                     ret))))
+                             partial-val-map
+                             sorted-keys)
+                     {::timings @timings})))
+      {::dag shaken-dag-with-inputs
+       ::sorted-keys sorted-keys
+       ::input-key-set input-key-set
+       ::fn-map fn-map})))
+
 (defprotocol Idismantle
   (dismantle [this] "destroy or close resource"))
 
